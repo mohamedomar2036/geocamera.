@@ -17,6 +17,12 @@ export interface RecordItem extends Settings {
   mime: string;
   blob: Blob;
   location: Location | null;
+  country?: string;
+  city?: string;
+  area?: string;
+  stampVersion?: number;
+  videoStamped?: boolean;
+  sequenceVersion?: number;
 }
 export function utm(lat: number, lon: number) {
   if (
@@ -81,6 +87,9 @@ export function recordsCSV(records: RecordItem[]) {
       u?.easting,
       u?.northing,
       `media/${filename(r)}`,
+      r.country,
+      r.city,
+      r.area,
     ];
   });
   return (
@@ -102,6 +111,9 @@ export function recordsCSV(records: RecordItem[]) {
         "easting_m",
         "northing_m",
         "file",
+        "country",
+        "city",
+        "area",
       ],
       ...rows,
     ]

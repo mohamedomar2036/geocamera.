@@ -730,3 +730,48 @@ footer b {
   margin-bottom: 20px;
   color: #681b35;
 }
+
+.brand-icon {
+  object-fit: contain;
+}
+.video-warning {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #e8c58c;
+  border-radius: 8px;
+  background: #f5eee9;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.video-warning button {
+  padding: 10px;
+  border-radius: 6px;
+  color: #f5eee9;
+  background: #681b35;
+}
+.place-card > p {
+  font-size: 12px;
+  line-height: 1.8;
+}
+.place-card .subtext {
+  margin-bottom: 12px;
+}
+.place-consent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.5;
+}
+.place-consent input {
+  width: 20px;
+  min-height: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: #681b35;
+}
+.place-attribution {
+  display: inline-block;
+  color: #72505e;
+  font-size: 10px;
+  margin-top: 14px;
+}

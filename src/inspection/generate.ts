@@ -7,6 +7,7 @@ import {
   type InspectionFormat,
 } from "./data";
 import type { InspectionImage } from "./images";
+import { excelPhotoLayout, wordPhotoLayout } from "./layout";
 export interface ReportLogo extends InspectionImage {}
 export interface InspectionDocument {
   rows: Omit<InspectionRow, "photo">[];
@@ -127,6 +128,7 @@ export async function generateInspectionXlsx(
       wrapText: true,
     };
   });
+  let pageHeight = 0;
   data.rows.forEach((r, index) => {
     const row = sheet.addRow([
       r.photoNumber,
@@ -138,7 +140,14 @@ export async function generateInspectionXlsx(
       "",
       r.stageNumber,
     ]);
-    row.height = 140;
+    const image = data.images[index];
+    const layout = excelPhotoLayout(image.width, image.height);
+    row.height = layout.rowHeightPoints;
+    if (pageHeight + layout.rowHeightPoints > 360 && index > 0) {
+      sheet.getRow(row.number - 1).addPageBreak();
+      pageHeight = 0;
+    }
+    pageHeight += layout.rowHeightPoints;
     row.eachCell({ includeEmpty: true }, (cell) => {
       cell.font = { name: "Calibri", size: 10 };
       cell.alignment = {
@@ -161,24 +170,16 @@ export async function generateInspectionXlsx(
     });
     row.getCell(2).numFmt = "0.000";
     row.getCell(3).numFmt = "0.000";
-    const image = data.images[index];
-    const size = fitWithin(image.width, image.height, 280, 166);
+    const size = layout.image;
     const id = book.addImage({
       base64: `data:image/jpeg;base64,${base64(image.bytes)}`,
       extension: "jpeg",
     });
     sheet.addImage(id, {
-      tl: pixelAnchor(
-        6,
-        row.number - 1,
-        (313 - size.width) / 2,
-        (186.67 - size.height) / 2,
-      ),
+      tl: pixelAnchor(6, row.number - 1, layout.x, layout.y),
       ext: size,
       editAs: "oneCell",
     });
-    if (index > 0 && index % 2 === 0)
-      sheet.getRow(row.number - 1).addPageBreak();
   });
   const end = data.rows.length + 6;
   sheet.mergeCells(`A${end}:H${end}`);
@@ -226,7 +227,10 @@ export async function generateInspectionDocx(
     new D.ImageRun({
       type,
       data: image.bytes,
-      transformation: fitWithin(image.width, image.height, maxWidth, maxHeight),
+      transformation:
+        type === "jpg"
+          ? wordPhotoLayout(image.width, image.height)
+          : fitWithin(image.width, image.height, maxWidth, maxHeight),
       altText: { title: description, description, name: description },
     });
   const noBorder = { style: D.BorderStyle.NONE, size: 0, color: "FFFFFF" };
@@ -333,7 +337,7 @@ export async function generateInspectionDocx(
                   ? [
                       new D.Paragraph({
                         alignment: D.AlignmentType.CENTER,
-                        spacing: { before: 60, after: 60 },
+                        spacing: { before: 0, after: 0 },
                         children: [
                           picture(
                             data.images[index],

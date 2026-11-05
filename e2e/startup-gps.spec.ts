@@ -120,7 +120,7 @@ test("module failure shows recovery and reload preserves photos, videos and sett
   await page.route(bundle, (route) => route.abort());
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "GeoCamera could not start" }),
+    page.getByRole("heading", { name: "MQSIO could not start" }),
   ).toBeVisible();
   await assertPreserved(page);
   await page.getByRole("button", { name: "Check for Update" }).click();
@@ -142,7 +142,7 @@ test("a stalled entry script reaches the independent startup watchdog", async ({
   await page.waitForFunction(() => !!window.GeoCameraStartup);
   await page.clock.fastForward(12500);
   await expect(
-    page.getByRole("heading", { name: "GeoCamera could not start" }),
+    page.getByRole("heading", { name: "MQSIO could not start" }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Retry Startup" }),
@@ -158,7 +158,7 @@ test("a React render exception shows recovery instead of the splash", async ({
   });
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "GeoCamera could not start" }),
+    page.getByRole("heading", { name: "MQSIO could not start" }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Retry Startup" }),
@@ -289,7 +289,7 @@ test("a synchronous GPS SecurityError is handled without crashing React", async 
     }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "GeoCamera could not start" }),
+    page.getByRole("heading", { name: "MQSIO could not start" }),
   ).toHaveCount(0);
 });
 test("stale GPS does not present a current fix", async ({ page }) => {

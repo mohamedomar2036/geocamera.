@@ -36,3 +36,33 @@ export async function saveRecord(record: RecordItem) {
 export async function removeRecord(id: string) {
   await (await database()).delete("records", id);
 }
+
+/** Serial read/write transaction rejects overlapping new-sequence saves without migrating legacy data. */
+export async function saveCaptureRecord(record: RecordItem) {
+  const transaction = (await database()).transaction("records", "readwrite");
+  try {
+    if (record.asset.trim()) {
+      let cursor = await transaction.store.openCursor();
+      while (cursor) {
+        if (
+          cursor.value.sequenceVersion === 1 &&
+          cursor.value.asset === record.asset
+        )
+          throw new Error(
+            `Asset ID ${record.asset} was already saved by another capture. Choose a new starting Asset ID and retry.`,
+          );
+        cursor = await cursor.continue();
+      }
+    }
+    await transaction.store.add({ ...record, sequenceVersion: 1 });
+    await transaction.done;
+  } catch (error) {
+    try {
+      transaction.abort();
+    } catch {
+      /* Already completed or aborted. */
+    }
+    await transaction.done.catch(() => {});
+    throw error;
+  }
+}

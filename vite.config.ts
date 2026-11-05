@@ -7,10 +7,10 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["geocamera-icon-180.png", "geocamera-full-logo.png"],
+      includeAssets: ["mqsio-icon-180.png", "mqsio-full-logo.png"],
       manifest: {
-        name: "GeoCamera",
-        short_name: "GeoCamera",
+        name: "MQSIO",
+        short_name: "MQSIO",
         description: "Field evidence, precisely located.",
         theme_color: "#681B35",
         background_color: "#F5EEE9",
@@ -18,13 +18,13 @@ export default defineConfig({
         start_url: ".",
         icons: [
           {
-            src: "geocamera-icon-192.png",
+            src: "mqsio-icon-192.png",
             sizes: "192x192",
             type: "image/png",
             purpose: "any",
           },
           {
-            src: "geocamera-icon-512.png",
+            src: "mqsio-icon-512.png",
             sizes: "512x512",
             type: "image/png",
             purpose: "any",

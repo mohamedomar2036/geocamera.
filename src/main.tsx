@@ -15,7 +15,7 @@ void import("./App")
     );
   })
   .catch((error) => {
-    console.error("GeoCamera module loading failed", error);
+    console.error("MQSIO module loading failed", error);
     if (window.GeoCameraStartup) window.GeoCameraStartup.fail(error);
     else
       createRoot(document.getElementById("root")!).render(<StartupRecovery />);
