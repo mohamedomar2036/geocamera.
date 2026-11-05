@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import JSZip from "jszip";
+import InspectionSettings from "./inspection/InspectionSettings";
+import InspectionExport from "./inspection/InspectionExport";
 import { allRecords, saveRecord, removeRecord } from "./storage";
 import {
   utm,
@@ -474,6 +476,13 @@ export default function App() {
                 >
                   ↓ Export day · CSV + media ZIP
                 </button>
+                <InspectionExport
+                  records={records}
+                  day={day}
+                  busy={busy}
+                  onBusyChange={setBusy}
+                  onDownload={download}
+                />
                 {!selected.length ? (
                   <div className="empty-records">
                     No captures on this date.
@@ -552,6 +561,7 @@ export default function App() {
                 </label>
               ))}
             </section>
+            <InspectionSettings />
             <section className="card location-card">
               <div className="section-heading">
                 <h2>Location</h2>

@@ -638,3 +638,66 @@ footer b {
   max-height: 85dvh;
   object-fit: contain;
 }
+
+.inspection-export {
+  border: 1px solid #e9dfe0;
+  border-radius: 10px;
+  padding: 16px;
+  margin: 12px 0 20px;
+}
+.inspection-export h3 {
+  font-size: 14px;
+  color: #681b35;
+  margin: 0;
+}
+.inspection-export .subtext {
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+.report-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.report-options label {
+  min-width: 0;
+}
+.report-options select {
+  font: inherit;
+  font-size: 12px;
+  color: #522437;
+  width: 100%;
+  display: block;
+  padding: 10px 6px;
+  margin-top: 8px;
+  border: 1px solid #e9dfe0;
+  border-radius: 7px;
+  background: #faf6f2;
+  min-height: 44px;
+}
+.report-options select:focus-visible {
+  outline: 2px solid #e8c58c;
+}
+.report-progress,
+.report-error {
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  margin: 8px 0 0;
+}
+.report-error {
+  color: #681b35;
+}
+.report-cancel {
+  background: #f1e5e8;
+  color: #681b35;
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 11px;
+}
+@media (max-width: 380px) {
+  .report-options {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}

@@ -11,6 +11,8 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "docx": "^9.15.2",
+    "exceljs": "^4.4.0",
     "idb": "^8.0.0",
     "jszip": "^3.10.1",
     "proj4": "^2.15.0",
