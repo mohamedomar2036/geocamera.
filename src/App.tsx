@@ -52,6 +52,11 @@ function coordinates(location: Location | null) {
   }
 }
 export default function App() {
+  const [launchVisible, setLaunchVisible] = useState(true);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLaunchVisible(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [settings, setSettings] = useState<Settings>(readSettings);
   const [location, setLocation] = useState<Location | null>(null);
   const [gpsAt, setGpsAt] = useState(0);
@@ -306,6 +311,19 @@ export default function App() {
   const selected = records.filter((r) => r.day === day);
   return (
     <div className="app">
+      {launchVisible && (
+        <div
+          className="launch-screen"
+          role="status"
+          aria-label="Starting GeoCamera"
+        >
+          <img
+            src="/geocamera-full-logo.png"
+            alt="GeoCamera — GIS Field Tools"
+            onError={() => setLaunchVisible(false)}
+          />
+        </div>
+      )}
       <header>
         <a className="brand" href="#">
           <span className="brand-icon">◎</span>

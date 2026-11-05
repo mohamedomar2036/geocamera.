@@ -621,3 +621,20 @@ footer b {
   font-size: 9px;
   padding: 6px 9px;
 }
+
+.launch-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: #f5eee9;
+  padding: max(24px, env(safe-area-inset-top)) 24px
+    max(24px, env(safe-area-inset-bottom));
+}
+.launch-screen img {
+  display: block;
+  width: min(100%, 520px);
+  max-height: 85dvh;
+  object-fit: contain;
+}

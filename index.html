@@ -8,12 +8,27 @@
     />
     <meta name="theme-color" content="#681B35" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/geocamera-icon-180.png"
+    />
     <meta name="apple-mobile-web-app-title" content="GeoCamera" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="192x192"
+      href="/geocamera-icon-192.png"
+    />
+    <link rel="preload" as="image" href="/geocamera-full-logo.png" />
     <title>GeoCamera</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="launch-screen" role="status" aria-label="Starting GeoCamera">
+        <img src="/geocamera-full-logo.png" alt="GeoCamera — GIS Field Tools" />
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
