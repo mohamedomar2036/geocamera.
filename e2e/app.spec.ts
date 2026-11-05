@@ -300,6 +300,10 @@ test("handles an unreadable stored photograph without changing the library", asy
   page,
 }) => {
   await page.goto("/");
+  await expect(page.locator(".launch-screen")).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Field camera", exact: true }),
+  ).toBeVisible();
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open("geocamera", 1);
@@ -308,20 +312,18 @@ test("handles an unreadable stored photograph without changing the library", asy
     });
     await new Promise<void>((resolve, reject) => {
       const transaction = db.transaction("records", "readwrite");
-      transaction
-        .objectStore("records")
-        .put({
-          id: "damaged-photo",
-          kind: "photo",
-          createdAt: new Date().toISOString(),
-          day: "2026-11-05",
-          project: "Site",
-          stage: "1",
-          asset: "Bad file",
-          location: null,
-          mime: "image/jpeg",
-          blob: new Blob(["not-a-jpeg"], { type: "image/jpeg" }),
-        });
+      transaction.objectStore("records").put({
+        id: "damaged-photo",
+        kind: "photo",
+        createdAt: new Date().toISOString(),
+        day: "2026-11-05",
+        project: "Site",
+        stage: "1",
+        asset: "Bad file",
+        location: null,
+        mime: "image/jpeg",
+        blob: new Blob(["not-a-jpeg"], { type: "image/jpeg" }),
+      });
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
     });

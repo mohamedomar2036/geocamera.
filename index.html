@@ -29,6 +29,180 @@
         <img src="/geocamera-full-logo.png" alt="GeoCamera — GIS Field Tools" />
       </div>
     </div>
+    <style>
+      .startup-recovery {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: #f5eee9;
+        color: #681b35;
+        font:
+          15px/1.6 system-ui,
+          sans-serif;
+        text-align: center;
+      }
+      .startup-recovery img {
+        width: min(65vw, 260px);
+        max-height: 32vh;
+        object-fit: contain;
+      }
+      .startup-recovery h1 {
+        font-size: 23px;
+        margin: 12px 0;
+      }
+      .startup-recovery p {
+        max-width: 520px;
+        margin: 8px 0;
+      }
+      .startup-recovery button {
+        border: 1px solid #681b35;
+        border-radius: 7px;
+        background: #681b35;
+        color: #f5eee9;
+        padding: 12px 20px;
+        margin: 6px;
+        font: inherit;
+        cursor: pointer;
+      }
+      .startup-recovery details {
+        max-width: 90%;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+        margin: 12px;
+      }
+    </style>
+    <script>
+      // Independent of ES modules, React, storage, GPS and the Service Worker.
+      (function () {
+        var ready = false;
+        var timer;
+        function show(error) {
+          if (document.getElementById("startup-recovery")) return;
+          ready = true;
+          clearTimeout(timer);
+          var panel = document.createElement("section");
+          panel.id = "startup-recovery";
+          panel.className = "startup-recovery";
+          panel.setAttribute("role", "alert");
+          panel.innerHTML =
+            '<img src="/geocamera-full-logo.png" alt="GeoCamera — GIS Field Tools"><h1>GeoCamera could not start</h1><p>Your saved photos, videos and settings have not been cleared.</p><p>Retry startup, or check for an application update. Keep this browser profile to access its existing records.</p>';
+          var retry = document.createElement("button");
+          retry.textContent = "Retry Startup";
+          retry.onclick = function () {
+            window.location.reload();
+          };
+          panel.appendChild(retry);
+          var update = document.createElement("button");
+          update.textContent = "Check for Update";
+          update.onclick = checkForUpdate;
+          panel.appendChild(update);
+          if (error) {
+            var details = document.createElement("details");
+            var summary = document.createElement("summary");
+            summary.textContent = "Technical details";
+            details.appendChild(summary);
+            var description = document.createElement("p");
+            description.textContent = String(error.message || error).slice(
+              0,
+              600,
+            );
+            details.appendChild(description);
+            panel.appendChild(details);
+          }
+          document.body.appendChild(panel);
+        }
+        function checkForUpdate() {
+          var status = document.getElementById("startup-update-status");
+          if (!status) {
+            status = document.createElement("p");
+            status.id = "startup-update-status";
+            status.setAttribute("role", "status");
+            var panel = document.querySelector(".startup-recovery");
+            if (panel) panel.appendChild(status);
+          }
+          status.textContent = "Checking for an update…";
+          try {
+            if (!navigator.serviceWorker) {
+              status.textContent =
+                "Use Retry Startup to reload the application.";
+              return;
+            }
+            navigator.serviceWorker
+              .getRegistration()
+              .then(function (registration) {
+                if (!registration) return;
+                return registration.update().then(function () {
+                  if (registration.waiting)
+                    registration.waiting.postMessage({ type: "SKIP_WAITING" });
+                });
+              })
+              .then(function () {
+                status.textContent =
+                  "Update check complete. Tap Retry Startup. Your records are unchanged.";
+              })
+              .catch(function () {
+                status.textContent =
+                  "The update check failed. Reconnect to the Internet and retry. Your records are unchanged.";
+              });
+          } catch (error) {
+            status.textContent =
+              "Updates are unavailable in this browser. Try Retry Startup. Your records are unchanged.";
+          }
+        }
+        window.GeoCameraStartup = {
+          ready: function () {
+            ready = true;
+            clearTimeout(timer);
+          },
+          fail: show,
+          update: checkForUpdate,
+        };
+        window.addEventListener(
+          "error",
+          function (event) {
+            if (
+              !ready &&
+              (event.error ||
+                (event.target && event.target.tagName === "SCRIPT"))
+            )
+              show(
+                event.error ||
+                  new Error("An application script could not load."),
+              );
+          },
+          true,
+        );
+        window.addEventListener("unhandledrejection", function (event) {
+          if (!ready)
+            show(event.reason || new Error("Startup initialization failed."));
+        });
+        timer = setTimeout(function () {
+          if (!ready)
+            show(
+              new Error(
+                "Startup did not complete. An application script may be unavailable or incompatible.",
+              ),
+            );
+        }, 12000);
+      })();
+    </script>
+
+    <noscript
+      ><section class="startup-recovery">
+        <img src="/geocamera-full-logo.png" alt="GeoCamera — GIS Field Tools" />
+        <h1>JavaScript is required</h1>
+        <p>
+          Enable JavaScript in Safari to open GeoCamera. Your saved records have
+          not been cleared.
+        </p>
+      </section></noscript
+    >
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

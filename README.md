@@ -87,3 +87,30 @@ Excel مهيأ لطباعة A4 أفقي، بعناوين مكررة وصفوف �
 تُضمّن بايتات PNG الأصلية في المستندات دون إعادة رسم أو قص أو تغيير ألوان. تضم ذاكرة PWA المؤقتة الشعارات ومكتبات إنشاء التقارير، ليعمل التصدير دون اتصال بعد اكتمال تهيئة التطبيق أول مرة.
 
 التحقق الآلي يشمل اختيار اليوم/الكل، استبعاد الفيديوهات، UTM الرقمي، الإعدادات، وإنتاج الملفين من صور JPEG مختومة التقطتها كاميرا الاختبار، مع فحص الصور والشعارات المضمنة وتكرار العناوين والتذييل والتعامل مع صورة غير قابلة للقراءة. اختبارات المتصفح تستخدم كاميرا وGPS محاكيين؛ لا تستبدل تجربة Safari وFiles على iPhone فعلي.
+
+## Safari startup and GPS recovery
+
+Startup no longer opens IndexedDB during module evaluation. Database access is lazy, failures are reported through Retry Records, and an abnormally terminated connection can reopen on retry. The database remains `geocamera`, version **1**, with its existing `records` store; no migration or data reset was added. Project and preparer settings are written only after user edits, so a temporary read failure cannot overwrite existing saved values with defaults.
+
+The original 1.2-second branded splash is unchanged during successful startup. A small inline watchdog operates independently of the application modules, IndexedDB and GPS. Module errors, a 12-second startup stall, and React render failures show recovery controls rather than an indefinite splash. **Retry Startup** reloads the same profile; **Check for Update** requests a Service Worker update. Neither clears storage, deletes caches, nor unregisters workers. Vercel headers require revalidation of HTML and SW registration scripts while retaining the existing offline PWA behavior.
+
+GPS begins after the splash closes. **Retry GPS** clears only the previous GPS watch and requests a new fix. Denied, timed-out, unsupported and unavailable positioning have separate guidance; synchronous browser API restrictions are caught. Safari's per-site location permission is distinct from global Location Services and Precise Location. The Location card explains iPhone Safari, Home Screen app and macOS Safari settings. Changing a denied site permission may be required before Safari prompts again; the app cannot override that permission.
+
+The camera interface can load without GPS. Invalid positions are rejected, fixes older than a minute are not used for new captures or sharing, and missing coordinates remain missing. Existing WGS84/UTM conversion and report/ZIP exports are unchanged.
+
+### Diagnosis and validation scope
+
+Before the fix, injecting an IndexedDB `SecurityError` during module evaluation reproduced the reported symptom: an uncaught exception, the original splash still visible, and no mounted camera interface. This is a **verified failure path**, not proof that the affected physical iPhone threw that particular exception. Stale deployment assets, WebKit-specific compatibility, and the affected device's per-site/OS location permission remain unconfirmed without inspecting that device.
+
+Regression tests cover blocked IndexedDB and retry, module-loading failure and reload, stalled scripts, React render errors, temporarily denied settings reads, denied GPS followed by a real fix, timeout/unavailable GPS, synchronous SecurityError, missing GPS APIs and stale fixes. Preservation checks compare existing photo/video blob bytes, project/preparer settings and DB version before and after recovery. Existing camera, Excel, Word, CSV, ZIP and offline tests remain in the suite.
+
+```sh
+npm run typecheck
+npm run build
+npm test
+npm run test:e2e
+# With the Playwright WebKit binary and its system prerequisites installed:
+npm run test:webkit
+```
+
+No actual iPhone was available for this change. The current environment's network proxy denied inspection of `geocamera-chi.vercel.app` and denied WebKit downloads from `cdn.playwright.dev` / `playwright.download.prss.microsoft.com`. Chromium regression results must not be described as WebKit or physical-iPhone validation. The WebKit configuration runs the same startup/GPS recovery suite once that browser is available.

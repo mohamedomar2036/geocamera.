@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import JSZip from "jszip";
+import { useGeolocation } from "./useGeolocation";
 import InspectionSettings from "./inspection/InspectionSettings";
 import InspectionExport from "./inspection/InspectionExport";
 import { allRecords, saveRecord, removeRecord } from "./storage";
@@ -15,14 +16,19 @@ import {
 const defaults: Settings = { project: "", stage: "", asset: "" };
 function readSettings(): Settings {
   try {
+    const saved = JSON.parse(
+      localStorage.getItem("geocamera-settings") || "{}",
+    );
     return {
-      ...defaults,
-      ...JSON.parse(localStorage.getItem("geocamera-settings") || "{}"),
+      project: typeof saved?.project === "string" ? saved.project : "",
+      stage: typeof saved?.stage === "string" ? saved.stage : "",
+      asset: typeof saved?.asset === "string" ? saved.asset : "",
     };
   } catch {
-    return defaults;
+    return { ...defaults };
   }
 }
+
 function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -60,9 +66,17 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, []);
   const [settings, setSettings] = useState<Settings>(readSettings);
-  const [location, setLocation] = useState<Location | null>(null);
-  const [gpsAt, setGpsAt] = useState(0);
-  const [gpsError, setGpsError] = useState("Waiting for GPS permission");
+  const {
+    location,
+    gpsAt,
+    gpsError,
+    status: gpsStatus,
+    retryGPS,
+  } = useGeolocation(!launchVisible);
+  const [storageError, setStorageError] = useState("");
+  useEffect(() => {
+    if (!launchVisible) window.GeoCameraStartup?.ready();
+  }, [launchVisible]);
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [tab, setTab] = useState<"camera" | "library">("camera");
   const [mode, setMode] = useState<"photo" | "video">("photo");
@@ -79,7 +93,16 @@ export default function App() {
   const notify = (e: unknown) =>
     setMessage(e instanceof Error ? e.message : String(e));
   async function refresh() {
-    setRecords(await allRecords());
+    try {
+      setRecords(await allRecords());
+      setStorageError("");
+    } catch (error) {
+      setStorageError(
+        error instanceof Error
+          ? error.message
+          : "Local records are temporarily unavailable. Existing data has not been deleted.",
+      );
+    }
   }
   useEffect(() => {
     mounted.current = true;
@@ -90,33 +113,16 @@ export default function App() {
       stream.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      setGpsError("GPS is unavailable in this browser");
-      return;
-    }
-    const id = navigator.geolocation.watchPosition(
-      (p) => {
-        setLocation({
-          latitude: p.coords.latitude,
-          longitude: p.coords.longitude,
-          accuracy: p.coords.accuracy,
-        });
-        setGpsAt(p.timestamp);
-        setGpsError("");
-      },
-      (e) => setGpsError(e.message),
-      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 },
-    );
-    return () => navigator.geolocation.clearWatch(id);
-  }, []);
-  useEffect(() => {
+  function updateSettings(next: Settings) {
+    setSettings(next);
     try {
-      localStorage.setItem("geocamera-settings", JSON.stringify(settings));
+      localStorage.setItem("geocamera-settings", JSON.stringify(next));
     } catch {
-      setMessage("Project settings could not be saved.");
+      setMessage(
+        "Project settings could not be saved. Existing saved settings have not been cleared.",
+      );
     }
-  }, [settings]);
+  }
   useEffect(() => {
     if (video.current) video.current.srcObject = stream.current;
   }, [tab, camera]);
@@ -336,6 +342,18 @@ export default function App() {
         <span className="version">v1.0</span>
       </header>
       <main>
+        {storageError && (
+          <section className="storage-warning" role="alert">
+            <p>{storageError}</p>
+            <button
+              onClick={() => {
+                void refresh();
+              }}
+            >
+              Retry Records
+            </button>
+          </section>
+        )}
         <div className="intro">
           <p className="eyebrow">PRECISION IN EVERY FRAME</p>
           <h1>Your site. On record.</h1>
@@ -555,7 +573,7 @@ export default function App() {
                     placeholder={placeholder}
                     disabled={recording}
                     onChange={(e) =>
-                      setSettings({ ...settings, [key]: e.target.value })
+                      updateSettings({ ...settings, [key]: e.target.value })
                     }
                   />
                 </label>
@@ -565,8 +583,12 @@ export default function App() {
             <section className="card location-card">
               <div className="section-heading">
                 <h2>Location</h2>
-                <span className={`gps ${location && !gpsError ? "fixed" : ""}`}>
-                  {location && !gpsError ? "● GPS FIX" : "○ WAITING"}
+                <span className={`gps ${gpsStatus === "ready" ? "fixed" : ""}`}>
+                  {gpsStatus === "ready"
+                    ? "● GPS FIX"
+                    : gpsStatus === "locating"
+                      ? "○ WAITING"
+                      : "○ GPS OFF"}
                 </span>
               </div>
               <p className="subtext">WGS84 / automatic UTM zone</p>
@@ -594,7 +616,34 @@ export default function App() {
                   records.
                 </p>
               )}
-              {gpsError && <p className="gps-help">{gpsError}</p>}
+              {gpsError && (
+                <p className="gps-help" aria-live="polite">
+                  {gpsError}
+                </p>
+              )}
+              <button className="retry-gps" onClick={retryGPS}>
+                Retry GPS
+              </button>
+              <details className="gps-guidance">
+                <summary>Allow location in Safari</summary>
+                <p>
+                  iPhone Safari: open the page menu (aA or …), then Website
+                  Settings → Location → Allow or Ask. In iPhone Settings →
+                  Privacy &amp; Security → Location Services, enable Safari
+                  Websites while using the app and Precise Location.
+                </p>
+                <p>
+                  For a Home Screen app, check its location permission in iPhone
+                  settings. On macOS, use Safari → Settings → Websites →
+                  Location and allow this site. Then tap Retry GPS. Safari may
+                  require changing the website permission before it will ask
+                  again.
+                </p>
+                <p>
+                  GPS permission is optional. Photos can be captured without
+                  coordinates; GeoCamera will label them accordingly.
+                </p>
+              </details>
               <button className="share" onClick={shareLocation}>
                 ↗ Share location <span>WhatsApp & more</span>
               </button>

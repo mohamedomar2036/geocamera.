@@ -701,3 +701,32 @@ footer b {
     gap: 0;
   }
 }
+
+.retry-gps,
+.storage-warning button {
+  background: #681b35;
+  color: #f5eee9;
+  border-radius: 7px;
+  padding: 10px 14px;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.gps-guidance {
+  color: #72505e;
+  font-size: 11px;
+  line-height: 1.7;
+  margin: 10px 0 18px;
+}
+.gps-guidance summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.storage-warning {
+  border: 1px solid #d9bec7;
+  border-radius: 10px;
+  background: #fffcf9;
+  padding: 16px;
+  font-size: 12px;
+  margin-bottom: 20px;
+  color: #681b35;
+}

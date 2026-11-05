@@ -1,16 +1,20 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { INSPECTION_SETTINGS_KEY, readInspectionSettings } from "./data";
 export default function InspectionSettings() {
   const [settings, setSettings] = useState(readInspectionSettings);
   const [error, setError] = useState("");
-  useEffect(() => {
+  function updateSettings(next: typeof settings) {
+    setSettings(next);
     try {
-      localStorage.setItem(INSPECTION_SETTINGS_KEY, JSON.stringify(settings));
+      localStorage.setItem(INSPECTION_SETTINGS_KEY, JSON.stringify(next));
       setError("");
     } catch {
-      setError("Report settings could not be saved on this device.");
+      setError(
+        "Report settings could not be saved. Existing saved settings have not been cleared.",
+      );
     }
-  }, [settings]);
+  }
+
   return (
     <section className="card">
       <div className="section-heading">
@@ -29,7 +33,7 @@ export default function InspectionSettings() {
             maxLength={120}
             value={settings[key]}
             onChange={(e) =>
-              setSettings({ ...settings, [key]: e.target.value })
+              updateSettings({ ...settings, [key]: e.target.value })
             }
           />
         </label>
