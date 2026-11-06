@@ -400,7 +400,7 @@ export default function App() {
         >
           <img
             src="/mqsio-full-logo.png"
-            alt="MQSIO — مقسيو — GIS FIELD TOOLS"
+            alt="MQSIO — GIS FIELD TOOLS"
             onError={() => setLaunchVisible(false)}
           />
         </div>

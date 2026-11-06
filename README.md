@@ -1,4 +1,4 @@
-# MQSIO v2.0 — مقسيو
+# MQSIO v2.0
 
 تطبيق PWA محلي لتوثيق المواقع باستخدام React + TypeScript + Vite. لا يحتاج Backend أو تسجيل دخول.
 

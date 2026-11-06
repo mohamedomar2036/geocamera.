@@ -12,7 +12,7 @@ declare global {
 export function StartupRecovery() {
   return (
     <section className="startup-recovery" role="alert">
-      <img src="/mqsio-full-logo.png" alt="MQSIO — مقسيو — GIS FIELD TOOLS" />
+      <img src="/mqsio-full-logo.png" alt="MQSIO — GIS FIELD TOOLS" />
       <h1>MQSIO could not start</h1>
       <p>Your saved photos, videos and settings have not been cleared.</p>
       <p>

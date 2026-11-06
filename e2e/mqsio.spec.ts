@@ -41,7 +41,7 @@ test("MQSIO manifest, icons, launch and recovery use the approved artwork", asyn
   request,
 }) => {
   await page.goto("/");
-  await expect(page).toHaveTitle("MQSIO — مقسيو");
+  await expect(page).toHaveTitle("MQSIO — GIS FIELD TOOLS");
   await expect(page.locator(".brand")).toContainText("MQSIO");
   await expect(page.locator(".brand small")).toHaveText("GIS FIELD TOOLS");
   const manifest = await (await request.get("/manifest.webmanifest")).json();
