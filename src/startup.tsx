@@ -12,8 +12,8 @@ declare global {
 export function StartupRecovery() {
   return (
     <section className="startup-recovery" role="alert">
-      <img src="/geocamera-full-logo.png" alt="GeoCamera — GIS Field Tools" />
-      <h1>GeoCamera could not start</h1>
+      <img src="/mqsio-full-logo.png" alt="MQSIO — GIS FIELD TOOLS" />
+      <h1>MQSIO could not start</h1>
       <p>Your saved photos, videos and settings have not been cleared.</p>
       <p>
         Retry startup, or check for an application update. Keep this browser
@@ -36,7 +36,7 @@ export class StartupBoundary extends Component<
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
     window.GeoCameraStartup?.ready();
-    console.error("GeoCamera render failed", error, info.componentStack);
+    console.error("MQSIO render failed", error, info.componentStack);
   }
   render() {
     return this.state.failed ? <StartupRecovery /> : this.props.children;

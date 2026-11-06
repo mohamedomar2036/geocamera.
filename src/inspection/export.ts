@@ -19,7 +19,7 @@ async function loadLogo(
   const response = await fetch(url, { signal });
   if (!response.ok)
     throw new InspectionReportError(
-      "An approved report logo could not be loaded. Reopen GeoCamera online once, then retry.",
+      "An approved report logo could not be loaded. Reopen MQSIO online once, then retry.",
     );
   return { bytes: new Uint8Array(await response.arrayBuffer()), width, height };
 }

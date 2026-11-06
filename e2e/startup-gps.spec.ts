@@ -120,7 +120,7 @@ test("module failure shows recovery and reload preserves photos, videos and sett
   await page.route(bundle, (route) => route.abort());
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "GeoCamera could not start" }),
+    page.getByRole("heading", { name: "MQSIO could not start" }),
   ).toBeVisible();
   await assertPreserved(page);
   await page.getByRole("button", { name: "Check for Update" }).click();
@@ -142,7 +142,7 @@ test("a stalled entry script reaches the independent startup watchdog", async ({
   await page.waitForFunction(() => !!window.GeoCameraStartup);
   await page.clock.fastForward(12500);
   await expect(
-    page.getByRole("heading", { name: "GeoCamera could not start" }),
+    page.getByRole("heading", { name: "MQSIO could not start" }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Retry Startup" }),
@@ -158,7 +158,7 @@ test("a React render exception shows recovery instead of the splash", async ({
   });
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "GeoCamera could not start" }),
+    page.getByRole("heading", { name: "MQSIO could not start" }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Retry Startup" }),
@@ -289,7 +289,7 @@ test("a synchronous GPS SecurityError is handled without crashing React", async 
     }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "GeoCamera could not start" }),
+    page.getByRole("heading", { name: "MQSIO could not start" }),
   ).toHaveCount(0);
 });
 test("stale GPS does not present a current fix", async ({ page }) => {
@@ -357,3 +357,322 @@ test("GPS is requested only after the branded splash has closed", async ({
     )
     .toBe("false");
 });
+
+test("Retry GPS requests maximumAge zero, coalesces clicks and ignores cancelled watch callbacks", async ({
+  page,
+  context,
+}) => {
+  await context.route("https://api.bigdatacloud.net/**", (route) =>
+    route.fulfill({
+      json: { countryName: "Fresh Country", city: "Fresh City" },
+    }),
+  );
+  await page.addInitScript(() => {
+    const watches: any[] = [];
+    const requests: any[] = [];
+    (window as any).gpsWatches = watches;
+    (window as any).freshGPSRequests = requests;
+    Object.defineProperty(navigator, "share", {
+      configurable: true,
+      value: async (data: ShareData) =>
+        sessionStorage.setItem("fresh-share", JSON.stringify(data)),
+    });
+    Object.defineProperty(navigator, "geolocation", {
+      value: {
+        clearWatch() {},
+        watchPosition(success: PositionCallback, error: PositionErrorCallback) {
+          watches.push({ success, error });
+          if (watches.length === 1)
+            setTimeout(
+              () =>
+                success({
+                  coords: {
+                    latitude: 24.7136,
+                    longitude: 46.6753,
+                    accuracy: 35,
+                  },
+                  timestamp: Date.now(),
+                } as GeolocationPosition),
+              0,
+            );
+          return watches.length;
+        },
+        getCurrentPosition(
+          success: PositionCallback,
+          error: PositionErrorCallback,
+          options: PositionOptions,
+        ) {
+          requests.push({ success, error, options });
+        },
+      },
+    });
+  });
+  await page.goto("/");
+  await started(page);
+  await expect(page.getByText("● GPS FIX")).toBeVisible();
+  await expect(page.locator(".brand small")).toHaveText("GIS FIELD TOOLS");
+  await expect(page.locator(".brand")).toContainText("MQSIO");
+  await page.getByRole("button", { name: "Retry GPS", exact: true }).click();
+  await page.getByRole("button", { name: "Retry GPS", exact: true }).click();
+  expect(
+    await page.evaluate(() =>
+      (window as any).freshGPSRequests.map((r: any) => r.options),
+    ),
+  ).toEqual([{ enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }]);
+  await page.evaluate(() =>
+    (window as any).gpsWatches[0].success({
+      coords: { latitude: 10, longitude: 20, accuracy: 35 },
+      timestamp: Date.now(),
+    }),
+  );
+  await expect(page.getByText("10.000000°")).toHaveCount(0);
+  await expect(page.getByText("● GPS FIX")).toHaveCount(0);
+  await page.evaluate(() =>
+    (window as any).freshGPSRequests[0].success({
+      coords: { latitude: 25, longitude: 46.6753, accuracy: 35 },
+      timestamp: Date.now(),
+    }),
+  );
+  await expect(page.getByText("25.000000°")).toBeVisible();
+  await expect(page.getByText("● GPS FIX")).toBeVisible();
+  expect(await page.evaluate(() => (window as any).gpsWatches.length)).toBe(2);
+  await page.getByRole("button", { name: /Share location/ }).click();
+  expect(
+    await page.evaluate(
+      () => JSON.parse(sessionStorage.getItem("fresh-share")!).text,
+    ),
+  ).toContain("q=25,46.6753");
+  await page.getByText("Country & city (optional)", { exact: true }).click();
+  await page.getByLabel("Use online place names").check();
+  await expect(page.locator(".place-card")).toContainText("City: Fresh City");
+});
+
+test("a stale fix gets one controlled refresh; cached fixes and denial never cause an automatic retry loop", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    const requests: any[] = [];
+    (window as any).freshGPSRequests = requests;
+    let count = 0;
+    Object.defineProperty(navigator, "geolocation", {
+      value: {
+        clearWatch() {},
+        watchPosition(success: PositionCallback) {
+          count++;
+          if (count === 1)
+            setTimeout(() => {
+              const position = {
+                coords: { latitude: 24.7136, longitude: 46.6753, accuracy: 35 },
+                timestamp: Date.now(),
+              } as GeolocationPosition;
+              (window as any).initialGPS = position;
+              success(position);
+            }, 0);
+          return count;
+        },
+        getCurrentPosition(
+          success: PositionCallback,
+          error: PositionErrorCallback,
+          options: PositionOptions,
+        ) {
+          requests.push({ success, error, options });
+        },
+      },
+    });
+  });
+  await page.goto("/");
+  await started(page);
+  await expect(page.getByText("● GPS FIX")).toBeVisible();
+  await page.clock.fastForward(65000);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).freshGPSRequests.length))
+    .toBe(1);
+  await page.evaluate(() =>
+    (window as any).freshGPSRequests[0].success((window as any).initialGPS),
+  );
+  await expect(
+    page.getByText("The last GPS fix is over a minute old.", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByText("● GPS FIX")).toHaveCount(0);
+  await page.clock.fastForward(180000);
+  expect(
+    await page.evaluate(() => (window as any).freshGPSRequests.length),
+  ).toBe(1);
+  await page.getByRole("button", { name: "Retry GPS", exact: true }).click();
+  await page.evaluate(() =>
+    (window as any).freshGPSRequests[1].error({ code: 1 }),
+  );
+  await expect(
+    page.getByText("Location access was denied for this website.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  await page.clock.fastForward(180000);
+  expect(
+    await page.evaluate(() => (window as any).freshGPSRequests.length),
+  ).toBe(2);
+});
+
+test("automatic fresh recovery keeps the watch, and a timed-out request cannot later overwrite GPS state", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    const requests: any[] = [];
+    const watches: any[] = [];
+    (window as any).freshGPSRequests = requests;
+    (window as any).gpsWatches = watches;
+    Object.defineProperty(navigator, "geolocation", {
+      value: {
+        clearWatch() {},
+        watchPosition(success: PositionCallback) {
+          watches.push(success);
+          if (watches.length === 1)
+            setTimeout(
+              () =>
+                success({
+                  coords: {
+                    latitude: 24.7136,
+                    longitude: 46.6753,
+                    accuracy: 35,
+                  },
+                  timestamp: Date.now(),
+                } as GeolocationPosition),
+              0,
+            );
+          return watches.length;
+        },
+        getCurrentPosition(
+          success: PositionCallback,
+          error: PositionErrorCallback,
+        ) {
+          requests.push({ success, error });
+        },
+      },
+    });
+  });
+  await page.goto("/");
+  await started(page);
+  await expect(page.getByText("● GPS FIX")).toBeVisible();
+  await page.clock.fastForward(65000);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).freshGPSRequests.length))
+    .toBe(1);
+  await page.evaluate(() =>
+    (window as any).freshGPSRequests[0].success({
+      coords: { latitude: 25, longitude: 46.6753, accuracy: 35 },
+      timestamp: Date.now(),
+    }),
+  );
+  await expect(page.getByText("25.000000°")).toBeVisible();
+  await expect(page.getByText("● GPS FIX")).toBeVisible();
+  expect(await page.evaluate(() => (window as any).gpsWatches.length)).toBe(2);
+  await page.clock.fastForward(65000);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).freshGPSRequests.length))
+    .toBe(2);
+  await page.clock.fastForward(21000);
+  await expect(
+    page.getByText("GPS timed out.", { exact: false }),
+  ).toBeVisible();
+  await page.evaluate(() =>
+    (window as any).freshGPSRequests[1].success({
+      coords: { latitude: 26, longitude: 46.6753, accuracy: 35 },
+      timestamp: Date.now(),
+    }),
+  );
+  await expect(page.getByText("26.000000°")).toHaveCount(0);
+  await expect(page.getByText("● GPS FIX")).toHaveCount(0);
+  await page.clock.fastForward(180000);
+  expect(
+    await page.evaluate(() => (window as any).freshGPSRequests.length),
+  ).toBe(2);
+});
+
+for (const epoch of ["Apple", "Unix"] as const) {
+  test(`${epoch} timestamps stay fresh through watch and Retry GPS, preserve ordering and expire at 60 seconds`, async ({
+    page,
+  }) => {
+    await page.clock.install({ time: new Date(1793964008538) });
+    await page.clock.setFixedTime(new Date(1793964008538));
+    await page.addInitScript(
+      ({ apple }) => {
+        const timestamp = 1793964008507 - (apple ? 978307200000 : 0);
+        const position = Object.freeze({
+          coords: Object.freeze({
+            latitude: 24.7136,
+            longitude: 46.6753,
+            accuracy: 35,
+          }),
+          timestamp,
+        });
+        (window as any).epochPosition = position;
+        const watches: PositionCallback[] = [];
+        (window as any).epochWatches = watches;
+        Object.defineProperty(navigator, "geolocation", {
+          value: {
+            clearWatch() {},
+            watchPosition(success: PositionCallback) {
+              watches.push(success);
+              if (watches.length === 1)
+                setTimeout(() => success(position as GeolocationPosition), 0);
+              return watches.length;
+            },
+            getCurrentPosition(success: PositionCallback) {
+              success(position as GeolocationPosition);
+            },
+          },
+        });
+      },
+      { apple: epoch === "Apple" },
+    );
+    await page.goto("/?gps_debug=1");
+    await started(page);
+    await expect(page.getByText("● GPS FIX")).toBeVisible();
+    await expect(page.getByText("24.713600°")).toBeVisible();
+    await page.getByRole("button", { name: "Retry GPS", exact: true }).click();
+    await expect(page.getByText("● GPS FIX")).toBeVisible();
+    // A Unix watch callback older than the explicit fix must not replace it,
+    // even when the explicit result arrived with Apple's epoch.
+    await page.evaluate(() =>
+      (window as any).epochWatches[1]({
+        coords: { latitude: 10, longitude: 20, accuracy: 35 },
+        timestamp: 1793964008506,
+      }),
+    );
+    await expect(page.getByText("10.000000°")).toHaveCount(0);
+    const result = await page.evaluate(() => ({
+      raw: (window as any).epochPosition.timestamp,
+      log: JSON.parse(window.MQSIO_GPS_DEBUG!.text()),
+    }));
+    expect(result.raw).toBe(
+      1793964008507 - (epoch === "Apple" ? 978307200000 : 0),
+    );
+    const accepted = result.log.events.filter(
+      (e: any) => e.reason === "accepted",
+    );
+    expect(accepted.map((e: any) => e.positionTimestamp)).toEqual([
+      1793964008507, 1793964008507,
+    ]);
+    expect(
+      result.log.events.some((e: any) => e.reason === "older_than_latest"),
+    ).toBe(true);
+    expect(
+      result.log.events.some(
+        (e: any) =>
+          e.event === "state_transition" &&
+          e.positionTimestamp === 1793964008507 &&
+          e.status === "ready",
+      ),
+    ).toBe(true);
+    await page.clock.setFixedTime(new Date(1793964008538 + 65000));
+    await page.clock.fastForward(5000);
+    await expect(
+      page.getByText("The last GPS fix is over a minute old.", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("● GPS FIX")).toHaveCount(0);
+  });
+}

@@ -1,9 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import JSZip from "jszip";
+import { captureIdentifier, nextIdentifier } from "./identifiers";
+import { usePlaceNames } from "./usePlaceNames";
+import { matchingPlace } from "./places";
+import { currentLocation, drawStamp, type StampMetadata } from "./media/stamp";
+import {
+  startStampedRecording,
+  validateStampedVideo,
+  type StampedRecording,
+} from "./media/recording";
 import { useGeolocation } from "./useGeolocation";
 import InspectionSettings from "./inspection/InspectionSettings";
 import InspectionExport from "./inspection/InspectionExport";
-import { allRecords, saveRecord, removeRecord } from "./storage";
+import { allRecords, saveCaptureRecord, removeRecord } from "./storage";
 import {
   utm,
   localDay,
@@ -66,6 +75,8 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, []);
   const [settings, setSettings] = useState<Settings>(readSettings);
+  const latestSettings = useRef(settings);
+  latestSettings.current = settings;
   const {
     location,
     gpsAt,
@@ -73,6 +84,24 @@ export default function App() {
     status: gpsStatus,
     retryGPS,
   } = useGeolocation(!launchVisible);
+  const places = usePlaceNames(currentLocation(location, gpsAt, gpsError));
+  const liveStamp = useRef({
+    location,
+    gpsAt,
+    gpsError,
+    settings,
+    place: places.resolved,
+    placesEnabled: places.enabled,
+  });
+  liveStamp.current = {
+    location,
+    gpsAt,
+    gpsError,
+    settings,
+    place: places.resolved,
+    placesEnabled: places.enabled,
+  };
+  const [videoWarning, setVideoWarning] = useState("");
   const [storageError, setStorageError] = useState("");
   useEffect(() => {
     if (!launchVisible) window.GeoCameraStartup?.ready();
@@ -87,7 +116,7 @@ export default function App() {
   const [day, setDay] = useState(localDay());
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
-  const recorder = useRef<MediaRecorder | null>(null);
+  const recordingSession = useRef<StampedRecording | null>(null);
   const mounted = useRef(true);
   const busyRef = useRef(false);
   const notify = (e: unknown) =>
@@ -109,41 +138,60 @@ export default function App() {
     refresh().catch(notify);
     return () => {
       mounted.current = false;
-      if (recorder.current?.state === "recording") recorder.current.stop();
+      recordingSession.current?.cancel();
       stream.current?.getTracks().forEach((t) => t.stop());
     };
   }, []);
   function updateSettings(next: Settings) {
+    latestSettings.current = next;
     setSettings(next);
     try {
       localStorage.setItem("geocamera-settings", JSON.stringify(next));
+      return true;
     } catch {
       setMessage(
         "Project settings could not be saved. Existing saved settings have not been cleared.",
       );
+      return false;
     }
   }
   useEffect(() => {
     if (video.current) video.current.srcObject = stream.current;
   }, [tab, camera]);
   function freshLocation() {
-    return location && !gpsError && Date.now() - gpsAt < 60000
-      ? { ...location }
-      : null;
+    return currentLocation(location, gpsAt, gpsError);
+  }
+  function frameMetadata(): StampMetadata {
+    const current = liveStamp.current;
+    const fix = currentLocation(
+      current.location,
+      current.gpsAt,
+      current.gpsError,
+    );
+    return {
+      ...current.settings,
+      asset: captureIdentifier(current.settings.asset),
+      location: fix,
+      ...matchingPlace(fix, current.placesEnabled ? current.place : null),
+    };
   }
   function base(
     kind: "photo" | "video",
     mime: string,
   ): Omit<RecordItem, "blob"> {
     const now = new Date();
+    const snapshot = frameMetadata();
     return {
-      ...settings,
+      ...snapshot,
+      country: snapshot.country || "Unavailable",
+      city: snapshot.city || "Unavailable",
+      area: snapshot.area || "Unavailable",
+      stampVersion: 2,
       id: crypto.randomUUID(),
       kind,
       mime,
       createdAt: now.toISOString(),
       day: localDay(now),
-      location: freshLocation(),
     };
   }
   async function startCamera() {
@@ -175,11 +223,22 @@ export default function App() {
       setBusy(false);
     }
   }
-  async function persist(item: RecordItem) {
-    await saveRecord(item);
+  async function persist(item: RecordItem, startingAsset: string) {
+    await saveCaptureRecord(item);
+    let nextSaved = true;
+    // Never overwrite a starting ID manually edited while encoding/saving was in progress.
+    if (
+      latestSettings.current.asset === startingAsset &&
+      startingAsset.trim()
+    ) {
+      nextSaved = updateSettings({
+        ...latestSettings.current,
+        asset: nextIdentifier(item.asset),
+      });
+    }
     await refresh();
     setMessage(
-      `${item.kind === "photo" ? "Photo" : "Video"} saved on this device${item.location ? "" : " · no current GPS fix"}.`,
+      `${item.kind === "photo" ? "Photo" : "Video"} saved on this device${item.location ? "" : " · no current GPS fix"}.${nextSaved ? "" : " Next Asset ID could not be persisted; check it before the next capture."}`,
     );
   }
   async function capture() {
@@ -189,6 +248,7 @@ export default function App() {
     try {
       const v = video.current;
       if (!v?.videoWidth) throw new Error("Wait for the camera image to load.");
+      const startingAsset = latestSettings.current.asset;
       const meta = base("photo", "image/jpeg");
       const canvas = document.createElement("canvas");
       canvas.width = v.videoWidth;
@@ -196,28 +256,13 @@ export default function App() {
       const ctx = canvas.getContext("2d");
       if (!ctx) throw new Error("Canvas is unavailable");
       ctx.drawImage(v, 0, 0);
-      const size = Math.max(16, Math.round(canvas.width / 48));
-      const lines = [
-        "GeoCamera · " + new Date(meta.createdAt).toLocaleString(),
-        `${meta.project || "No project"} / ${meta.stage || "No stage"} / ${meta.asset || "No asset ID"}`,
-        meta.location
-          ? `WGS84 ${meta.location.latitude.toFixed(6)}, ${meta.location.longitude.toFixed(6)} · ±${meta.location.accuracy.toFixed(0)} m`
-          : "GPS unavailable at capture",
-        coordinates(meta.location),
-      ];
-      const height = size * 1.6 * lines.length + size;
-      ctx.fillStyle = "rgba(35,12,21,.83)";
-      ctx.fillRect(0, canvas.height - height, canvas.width, height);
-      ctx.font = `${size}px sans-serif`;
-      lines.forEach((line, i) => {
-        ctx.fillStyle = i === 0 ? "#E8C58C" : "#F5EEE9";
-        ctx.fillText(
-          line,
-          size,
-          canvas.height - height + size * 1.6 * (i + 1),
-          canvas.width - size * 2,
-        );
-      });
+      drawStamp(
+        ctx,
+        canvas.width,
+        canvas.height,
+        meta,
+        new Date(meta.createdAt),
+      );
       const blob = await new Promise<Blob>((resolve, reject) =>
         canvas.toBlob(
           (b) => (b ? resolve(b) : reject(new Error("Photo encoding failed"))),
@@ -225,7 +270,7 @@ export default function App() {
           0.92,
         ),
       );
-      await persist({ ...meta, blob });
+      await persist({ ...meta, blob }, startingAsset);
     } catch (e) {
       notify(e);
     } finally {
@@ -234,49 +279,77 @@ export default function App() {
     }
   }
   function toggleRecording() {
-    if (recorder.current?.state === "recording") {
-      recorder.current.stop();
-      setRecording(false);
-      setBusy(true);
+    if (recordingSession.current) {
+      recordingSession.current.stop();
       return;
     }
+    if (busyRef.current || busy) return;
     try {
       if (!stream.current || !video.current?.videoWidth)
         throw new Error("Start the camera first.");
-      if (typeof MediaRecorder === "undefined")
-        throw new Error("Video recording is unavailable in this browser.");
-      const mime = ["video/mp4", "video/webm;codecs=vp9", "video/webm"].find(
-        (m) => MediaRecorder.isTypeSupported(m),
+      const startingAsset = latestSettings.current.asset;
+      const meta = base("video", "");
+      const session = startStampedRecording(
+        video.current,
+        stream.current,
+        () => ({ ...frameMetadata(), asset: meta.asset }),
+        () => {
+          if (mounted.current) {
+            setRecording(false);
+            setBusy(true);
+          }
+        },
       );
-      if (!mime) throw new Error("No supported video recording format.");
-      const meta = base("video", mime);
-      const r = new MediaRecorder(stream.current, { mimeType: mime });
-      const chunks: BlobPart[] = [];
-      recorder.current = r;
-      r.ondataavailable = (e) => {
-        if (e.data.size) chunks.push(e.data);
-      };
-      r.onerror = () => {
-        setMessage("Video recording failed.");
-        setRecording(false);
-        setBusy(false);
-      };
-      r.onstop = async () => {
-        try {
-          const blob = new Blob(chunks, { type: r.mimeType || mime });
-          if (!blob.size) throw new Error("The recording is empty.");
-          await persist({ ...meta, mime: blob.type, blob });
-        } catch (e) {
-          notify(e);
-        } finally {
-          setBusy(false);
-        }
-      };
-      r.start(1000);
+      recordingSession.current = session;
+      busyRef.current = true;
+      setVideoWarning("");
       setRecording(true);
-      setMessage("Recording · GPS and project metadata captured at start.");
-    } catch (e) {
-      notify(e);
+      setMessage(
+        "Recording stamped video without audio. Keep MQSIO in the foreground.",
+      );
+      void session.result
+        .then(async (result) => {
+          if (!mounted.current) return;
+          const actualMime = await validateStampedVideo(result.blob);
+          if (!mounted.current) return;
+          await persist(
+            {
+              ...meta,
+              mime: actualMime,
+              blob: new Blob([result.blob], { type: actualMime }),
+              videoStamped: true,
+            },
+            startingAsset,
+          );
+          if (result.reason)
+            setMessage(result.reason + " The stamped clip was saved.");
+        })
+        .catch((error) => {
+          if (mounted.current) {
+            const text =
+              error instanceof Error
+                ? error.message
+                : "Stamped-video recording failed. Use stamped photos instead.";
+            setVideoWarning(text);
+            notify(error);
+          }
+        })
+        .finally(() => {
+          if (recordingSession.current === session)
+            recordingSession.current = null;
+          busyRef.current = false;
+          if (mounted.current) {
+            setBusy(false);
+            setRecording(false);
+          }
+        });
+    } catch (error) {
+      setVideoWarning(
+        error instanceof Error
+          ? error.message
+          : "Stamped video is unavailable. Use stamped photos instead.",
+      );
+      notify(error);
     }
   }
   async function exportDay() {
@@ -291,7 +364,7 @@ export default function App() {
         type: "blob",
         compression: "STORE",
       });
-      download(blob, `GeoCamera-${day}.zip`);
+      download(blob, `MQSIO-${day}.zip`);
       setMessage(
         `Exported ${selected.length} records with their original media.`,
       );
@@ -305,9 +378,9 @@ export default function App() {
     try {
       const p = freshLocation();
       if (!p) throw new Error("Wait for a current GPS fix before sharing.");
-      const text = `${settings.project || "GeoCamera"}${settings.asset ? " · " + settings.asset : ""}\nhttps://maps.google.com/?q=${p.latitude},${p.longitude}\nAccuracy ±${p.accuracy.toFixed(0)} m`;
+      const text = `${settings.project || "MQSIO"}${settings.asset ? " · " + settings.asset : ""}\nhttps://maps.google.com/?q=${p.latitude},${p.longitude}\nAccuracy ±${p.accuracy.toFixed(0)} m`;
       if (navigator.share)
-        await navigator.share({ title: "GeoCamera location", text });
+        await navigator.share({ title: "MQSIO location", text });
       else {
         await navigator.clipboard.writeText(text);
         setMessage("Location copied. Paste it into WhatsApp.");
@@ -323,23 +396,23 @@ export default function App() {
         <div
           className="launch-screen"
           role="status"
-          aria-label="Starting GeoCamera"
+          aria-label="Starting MQSIO"
         >
           <img
-            src="/geocamera-full-logo.png"
-            alt="GeoCamera — GIS Field Tools"
+            src="/mqsio-full-logo.png"
+            alt="MQSIO — GIS FIELD TOOLS"
             onError={() => setLaunchVisible(false)}
           />
         </div>
       )}
       <header>
         <a className="brand" href="#">
-          <span className="brand-icon">◎</span>
+          <img className="brand-icon" src="/mqsio-icon-192.png" alt="" />
           <span>
-            GeoCamera<small>FIELD DOCUMENTATION</small>
+            MQSIO<small>GIS FIELD TOOLS</small>
           </span>
         </a>
-        <span className="version">v1.0</span>
+        <span className="version">v2.0</span>
       </header>
       <main>
         {storageError && (
@@ -472,9 +545,23 @@ export default function App() {
                         : "Record video"}
                   </span>
                 </div>
+                {videoWarning && (
+                  <div className="video-warning" role="alert">
+                    <p>{videoWarning}</p>
+                    <button
+                      onClick={() => {
+                        setMode("photo");
+                        setVideoWarning("");
+                      }}
+                    >
+                      Use stamped photos
+                    </button>
+                  </div>
+                )}
                 <p className="note">
-                  Photos include a permanent location & time stamp. Videos keep
-                  capture metadata in the record and CSV.
+                  Photos and supported videos contain permanent MQSIO metadata
+                  stamps. Video time and valid GPS update during recording. No
+                  audio.
                 </p>
               </>
             ) : (
@@ -641,8 +728,56 @@ export default function App() {
                 </p>
                 <p>
                   GPS permission is optional. Photos can be captured without
-                  coordinates; GeoCamera will label them accordingly.
+                  coordinates; MQSIO will label them accordingly.
                 </p>
+              </details>
+              <details className="gps-guidance place-card">
+                <summary>Country & city (optional)</summary>
+                <label className="place-consent">
+                  <input
+                    type="checkbox"
+                    checked={places.enabled}
+                    onChange={(e) => places.setEnabled(e.target.checked)}
+                  />{" "}
+                  Use online place names
+                </label>
+                <p className="subtext">
+                  Optional: sends current GPS to BigDataCloud, at most once per
+                  minute. Cached locally; photos and videos are never sent.
+                  Capture never waits for a lookup.
+                </p>
+                <p>
+                  Country: {places.names.country || "Unavailable"}
+                  <br />
+                  City: {places.names.city || "Unavailable"}
+                  <br />
+                  Area/region: {places.names.area || "Unavailable"}
+                </p>
+                {places.enabled && (
+                  <>
+                    <button
+                      className="share"
+                      disabled={places.loading || !freshLocation()}
+                      onClick={places.retry}
+                    >
+                      {places.loading
+                        ? "Resolving place names…"
+                        : "Retry place names"}
+                    </button>
+                    <p className="note" aria-live="polite">
+                      {places.error ||
+                        "Provider administrative labels; not a surveyed boundary. No city is substituted when absent."}
+                    </p>
+                  </>
+                )}
+                <a
+                  className="place-attribution"
+                  href="https://www.bigdatacloud.com/free-api/free-reverse-geocode-to-city-api"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  BigDataCloud service & privacy information
+                </a>
               </details>
               <button className="share" onClick={shareLocation}>
                 ↗ Share location <span>WhatsApp & more</span>
@@ -674,7 +809,7 @@ export default function App() {
       </main>
       <footer>
         <span>
-          GEOCAMERA <b>/</b> BUILT FOR THE FIELD
+          MQSIO <b>/</b> BUILT FOR THE FIELD
         </span>
         <span>WGS84 · LOCAL FIRST</span>
       </footer>
