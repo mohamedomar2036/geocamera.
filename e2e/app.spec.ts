@@ -305,6 +305,7 @@ test("handles an unreadable stored photograph without changing the library", asy
     page.getByRole("heading", { name: "Field camera", exact: true }),
   ).toBeVisible();
   await page.evaluate(async () => {
+    const capturedAt = new Date();
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open("geocamera", 1);
       request.onsuccess = () => resolve(request.result);
@@ -315,8 +316,8 @@ test("handles an unreadable stored photograph without changing the library", asy
       transaction.objectStore("records").put({
         id: "damaged-photo",
         kind: "photo",
-        createdAt: new Date().toISOString(),
-        day: "2026-11-05",
+        createdAt: capturedAt.toISOString(),
+        day: `${capturedAt.getFullYear()}-${String(capturedAt.getMonth() + 1).padStart(2, "0")}-${String(capturedAt.getDate()).padStart(2, "0")}`,
         project: "Site",
         stage: "1",
         asset: "Bad file",

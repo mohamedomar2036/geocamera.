@@ -43,7 +43,7 @@ test("MQSIO manifest, icons, launch and recovery use the approved artwork", asyn
   await page.goto("/");
   await expect(page).toHaveTitle("MQSIO — مقسيو");
   await expect(page.locator(".brand")).toContainText("MQSIO");
-  await expect(page.locator(".brand")).toContainText("مقسيو");
+  await expect(page.locator(".brand small")).toHaveText("GIS FIELD TOOLS");
   const manifest = await (await request.get("/manifest.webmanifest")).json();
   expect(manifest.name).toBe("MQSIO");
   expect(manifest.short_name).toBe("MQSIO");
@@ -196,12 +196,12 @@ test("video contains burned pixels and a changing clock, and expires stale GPS i
       value: {
         clearWatch() {},
         watchPosition(success: PositionCallback) {
-          (window as any).updateVideoGPS = success;
           setTimeout(
             () =>
               success({
                 coords: { latitude: 24.7136, longitude: 46.6753, accuracy: 4 },
-                timestamp: Date.now(),
+                // Start with a still-fresh fix and let its real timestamp expire.
+                timestamp: Date.now() - 56000,
               } as GeolocationPosition),
             0,
           );
@@ -225,12 +225,6 @@ test("video contains burned pixels and a changing clock, and expires stale GPS i
     .click();
   await expect(page.locator(".finder-label")).toContainText("● REC");
   await page.waitForTimeout(2300);
-  await page.evaluate(() =>
-    (window as any).updateVideoGPS({
-      coords: { latitude: 24.7136, longitude: 46.6753, accuracy: 4 },
-      timestamp: Date.now() - 120000,
-    }),
-  );
   await expect(
     page.getByText("The last GPS fix is over a minute old.", { exact: false }),
   ).toBeVisible();
@@ -304,7 +298,7 @@ test("video contains burned pixels and a changing clock, and expires stale GPS i
       };
     }
     const first = await sample(0.2);
-    const last = await sample(3.2);
+    const last = await sample(video.duration - 0.3);
     video.remove();
     URL.revokeObjectURL(url);
     return { first, last, width: c.width, height: c.height };

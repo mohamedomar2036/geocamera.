@@ -409,7 +409,7 @@ export default function App() {
         <a className="brand" href="#">
           <img className="brand-icon" src="/mqsio-icon-192.png" alt="" />
           <span>
-            MQSIO<small>مقسيو · GIS FIELD TOOLS</small>
+            MQSIO<small>GIS FIELD TOOLS</small>
           </span>
         </a>
         <span className="version">v2.0</span>
