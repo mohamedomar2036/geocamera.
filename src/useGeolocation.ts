@@ -36,7 +36,18 @@ export function gpsFailure(
       "Your device cannot determine a position right now. Check Location Services, move to an open area and tap Retry GPS.",
   };
 }
-export function validPosition(position: GeolocationPosition) {
+// Only recognize the Apple epoch when adding its exact offset yields a fresh fix.
+// Leave all other timestamps unchanged so existing stale/future validation still applies.
+export function normalizeGPSTimestamp(timestamp: number, now = Date.now()) {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return timestamp;
+  const unixTimestamp = timestamp + 978307200000;
+  const age = now - unixTimestamp;
+  return age >= 0 && age < 60000 ? unixTimestamp : timestamp;
+}
+export function validPosition(
+  position: GeolocationPosition,
+  timestamp = normalizeGPSTimestamp(position.timestamp),
+) {
   const c = position.coords;
   return (
     c &&
@@ -48,9 +59,9 @@ export function validPosition(position: GeolocationPosition) {
     c.longitude <= 180 &&
     Number.isFinite(c.accuracy) &&
     c.accuracy >= 0 &&
-    Number.isFinite(position.timestamp) &&
-    position.timestamp > 0 &&
-    position.timestamp <= Date.now() + 30000
+    Number.isFinite(timestamp) &&
+    timestamp > 0 &&
+    timestamp <= Date.now() + 30000
   );
 }
 export function useGeolocation(enabled: boolean) {
@@ -184,7 +195,8 @@ export function useGeolocation(enabled: boolean) {
             }));
             return;
           }
-          if (!validPosition(position)) {
+          const timestamp = normalizeGPSTimestamp(position.timestamp);
+          if (!validPosition(position, timestamp)) {
             trace("callback_decision", () => ({
               ...flags(),
               source,
@@ -194,7 +206,7 @@ export function useGeolocation(enabled: boolean) {
             return;
           }
           // A cached/delayed watch callback must not replace a newer explicit fix.
-          if (position.timestamp < latestTimestamp) {
+          if (timestamp < latestTimestamp) {
             trace("callback_decision", () => ({
               ...flags(),
               source,
@@ -206,12 +218,12 @@ export function useGeolocation(enabled: boolean) {
             ...flags(),
             source,
             reason: "accepted",
-            positionTimestamp: position.timestamp,
+            positionTimestamp: timestamp,
             accuracyMeters: position.coords.accuracy,
           }));
-          latestTimestamp = position.timestamp;
+          latestTimestamp = timestamp;
           const receivedAt = Date.now();
-          if (receivedAt - position.timestamp < 60000)
+          if (receivedAt - timestamp < 60000)
             automaticRefreshUsed.current = false;
           setNow(receivedAt);
           setState({
@@ -220,7 +232,7 @@ export function useGeolocation(enabled: boolean) {
               longitude: position.coords.longitude,
               accuracy: position.coords.accuracy,
             },
-            gpsAt: position.timestamp,
+            gpsAt: timestamp,
             status: "ready",
             gpsError: "",
           });

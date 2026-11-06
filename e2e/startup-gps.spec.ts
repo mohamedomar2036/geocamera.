@@ -589,3 +589,90 @@ test("automatic fresh recovery keeps the watch, and a timed-out request cannot l
     await page.evaluate(() => (window as any).freshGPSRequests.length),
   ).toBe(2);
 });
+
+for (const epoch of ["Apple", "Unix"] as const) {
+  test(`${epoch} timestamps stay fresh through watch and Retry GPS, preserve ordering and expire at 60 seconds`, async ({
+    page,
+  }) => {
+    await page.clock.install({ time: new Date(1793964008538) });
+    await page.clock.setFixedTime(new Date(1793964008538));
+    await page.addInitScript(
+      ({ apple }) => {
+        const timestamp = 1793964008507 - (apple ? 978307200000 : 0);
+        const position = Object.freeze({
+          coords: Object.freeze({
+            latitude: 24.7136,
+            longitude: 46.6753,
+            accuracy: 35,
+          }),
+          timestamp,
+        });
+        (window as any).epochPosition = position;
+        const watches: PositionCallback[] = [];
+        (window as any).epochWatches = watches;
+        Object.defineProperty(navigator, "geolocation", {
+          value: {
+            clearWatch() {},
+            watchPosition(success: PositionCallback) {
+              watches.push(success);
+              if (watches.length === 1)
+                setTimeout(() => success(position as GeolocationPosition), 0);
+              return watches.length;
+            },
+            getCurrentPosition(success: PositionCallback) {
+              success(position as GeolocationPosition);
+            },
+          },
+        });
+      },
+      { apple: epoch === "Apple" },
+    );
+    await page.goto("/?gps_debug=1");
+    await started(page);
+    await expect(page.getByText("● GPS FIX")).toBeVisible();
+    await expect(page.getByText("24.713600°")).toBeVisible();
+    await page.getByRole("button", { name: "Retry GPS", exact: true }).click();
+    await expect(page.getByText("● GPS FIX")).toBeVisible();
+    // A Unix watch callback older than the explicit fix must not replace it,
+    // even when the explicit result arrived with Apple's epoch.
+    await page.evaluate(() =>
+      (window as any).epochWatches[1]({
+        coords: { latitude: 10, longitude: 20, accuracy: 35 },
+        timestamp: 1793964008506,
+      }),
+    );
+    await expect(page.getByText("10.000000°")).toHaveCount(0);
+    const result = await page.evaluate(() => ({
+      raw: (window as any).epochPosition.timestamp,
+      log: JSON.parse(window.MQSIO_GPS_DEBUG!.text()),
+    }));
+    expect(result.raw).toBe(
+      1793964008507 - (epoch === "Apple" ? 978307200000 : 0),
+    );
+    const accepted = result.log.events.filter(
+      (e: any) => e.reason === "accepted",
+    );
+    expect(accepted.map((e: any) => e.positionTimestamp)).toEqual([
+      1793964008507, 1793964008507,
+    ]);
+    expect(
+      result.log.events.some((e: any) => e.reason === "older_than_latest"),
+    ).toBe(true);
+    expect(
+      result.log.events.some(
+        (e: any) =>
+          e.event === "state_transition" &&
+          e.positionTimestamp === 1793964008507 &&
+          e.status === "ready",
+      ),
+    ).toBe(true);
+    await page.clock.setFixedTime(new Date(1793964008538 + 65000));
+    await page.clock.fastForward(5000);
+    await expect(
+      page.getByText("The last GPS fix is over a minute old.", {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await expect(page.getByText("● GPS FIX")).toHaveCount(0);
+  });
+}
